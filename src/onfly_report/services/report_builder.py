@@ -88,7 +88,9 @@ class ReportBuilder:
             for month, data in sorted(monthly.items())
         ]
 
-        ranked_hotels = sorted(hotels.items(), key=lambda item: (item[1]["amount"], item[0]))
+        # total_brl decrescente; empate por hotel_id ascendente. Negar o Decimal inverte só o
+        # primeiro critério (reverse=True inverteria também o desempate).
+        ranked_hotels = sorted(hotels.items(), key=lambda item: (-item[1]["amount"], item[0]))
         top_hotels = [
             {
                 "hotel_id": hotel_id,
