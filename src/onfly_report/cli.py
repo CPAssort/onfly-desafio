@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 from .exceptions import InputFileError
@@ -26,6 +28,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", default="output/report.json", help="caminho do relatório JSON")
     parser.add_argument("--top", type=int, default=5, help="quantidade de hotéis no ranking")
     return parser
+
+
+def write_atomically(path: Path, content: str) -> None:
+    """Grava em um temporário no mesmo diretório e troca de uma vez com os.replace.
+
+    Se o processo cair no meio, ou duas execuções gravarem o mesmo --output, nunca sobra
+    um JSON truncado: quem lê vê o relatório anterior ou o novo inteiro.
+    """
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -52,10 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     output_path = Path(args.output)
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        write_atomically(output_path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     except OSError:
         logger.exception("falha ao escrever o relatório em %s", output_path)
         return 1
