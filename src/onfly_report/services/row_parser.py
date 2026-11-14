@@ -19,7 +19,7 @@ class RowParser:
     def parse(self, raw: RawRow) -> Reservation:
         values = raw.values
         try:
-            return Reservation(
+            reservation = Reservation(
                 reservation_id=(values.get("reservation_id") or "").strip(),
                 traveler_name=(values.get("traveler_name") or "").strip(),
                 company_id=(values.get("company_id") or "").strip(),
@@ -30,11 +30,27 @@ class RowParser:
                 checkin=date.fromisoformat((values.get("checkin_date") or "").strip()),
                 checkout=date.fromisoformat((values.get("checkout_date") or "").strip()),
                 rooms=int((values.get("rooms") or "").strip()),
-                status=(values.get("status") or "").strip(),
-                currency=(values.get("currency") or "").strip(),
+                # Normaliza como a tabela de câmbio já faz (.upper()), para "usd" e "confirmed"
+                # não virarem moeda sem taxa ou status desconhecido.
+                status=(values.get("status") or "").strip().upper(),
+                currency=(values.get("currency") or "").strip().upper(),
                 amount=Decimal((values.get("amount") or "").strip()),
                 payment_method=(values.get("payment_method") or "").strip(),
                 line_number=raw.line_number,
             )
         except (ValueError, InvalidOperation) as err:
             raise InputFileError(f"linha {raw.line_number} inválida: {err}") from err
+
+        self._validate(reservation)
+        return reservation
+
+    @staticmethod
+    def _validate(reservation: Reservation) -> None:
+        """Rejeita valores que passam na conversão de tipo mas quebram os totais."""
+        line = reservation.line_number
+        if not reservation.amount.is_finite():
+            raise InputFileError(f"linha {line} inválida: amount deve ser um número finito")
+        if reservation.rooms < 1:
+            raise InputFileError(f"linha {line} inválida: rooms deve ser maior ou igual a 1")
+        if reservation.checkout <= reservation.checkin:
+            raise InputFileError(f"linha {line} inválida: checkout_date deve ser posterior a checkin_date")
