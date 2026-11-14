@@ -20,7 +20,7 @@ class CsvRateRepository:
     def read(self) -> dict[str, Decimal]:
         rates: dict[str, Decimal] = {}
         try:
-            with self._path.open("r", encoding="utf-8", newline="") as handle:
+            with self._path.open("r", encoding="utf-8-sig", newline="") as handle:
                 reader = csv.DictReader(handle)
                 missing = [column for column in REQUIRED_COLUMNS if column not in (reader.fieldnames or [])]
                 if missing:
@@ -35,11 +35,17 @@ class CsvRateRepository:
                         rate = Decimal(raw_rate)
                     except InvalidOperation as err:
                         raise InputFileError(f"taxa inválida para {currency} em {self._path}") from err
-                    if rate <= 0:
-                        raise InputFileError(f"taxa não positiva para {currency} em {self._path}")
+                    # is_finite() antes de comparar: NaN lançaria InvalidOperation no "<=" e
+                    # Infinity passaria como "positiva".
+                    if not rate.is_finite() or rate <= 0:
+                        raise InputFileError(f"taxa deve ser finita e positiva para {currency} em {self._path}")
+                    if currency in rates:
+                        raise InputFileError(f"moeda duplicada na tabela de câmbio: {currency} em {self._path}")
                     rates[currency] = rate
         except FileNotFoundError as err:
             raise InputFileError(f"tabela de câmbio não encontrada: {self._path}") from err
+        except UnicodeDecodeError as err:
+            raise InputFileError(f"{self._path} não está em UTF-8: {err}") from err
         except (OSError, csv.Error) as err:
             raise InputFileError(f"falha ao ler {self._path}: {err}") from err
 
